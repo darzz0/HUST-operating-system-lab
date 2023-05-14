@@ -42,7 +42,7 @@ void handle_mtimer_trap() {
   // field in sip register.
   // hint: use write_csr to disable the SIP_SSIP bit in sip.
   //panic( "lab1_3: increase g_ticks by one, and clear SIP field in sip register.\n" );
-  g_ticks += 1;
+  g_ticks++;
   write_csr(sip, 0);
 }
 
@@ -78,14 +78,17 @@ void rrsched() {
   // TIME_SLICE_LEN (means it has consumed its time slice), change its status into READY,
   // place it in the rear of ready queue, and finally schedule next process to run.
   //panic( "You need to further implement the timer handling in lab3_3.\n" );
-  if( current->tick_count + 1 >= TIME_SLICE_LEN ){
-        current->tick_count = 0;
-        current->status = READY;
-        insert_to_ready_queue( current );
-        schedule();
-    }else{
-        current->tick_count ++;
-    }
+  if(current->tick_count + 1 >= TIME_SLICE_LEN)
+  {
+    current->tick_count = 0;
+    current->status = READY;
+    insert_to_ready_queue(current);
+    schedule();
+  }
+  else
+  {
+    current->tick_count++;
+  }
 }
 
 //

@@ -1,3 +1,4 @@
+
 /*
  * Utility functions for process management. 
  *
@@ -183,6 +184,19 @@ int do_fork( process* parent)
         memcpy( (void*)lookup_pa(child->pagetable, child->mapped_info[0].va),
           (void*)lookup_pa(parent->pagetable, parent->mapped_info[i].va), PGSIZE );
         break;
+      // added @lab3_challenge1
+      case DATA_SEGMENT:
+        for(int j=0;j<parent->mapped_info[i].npages;j++)
+        {
+          uint64 addr = lookup_pa(parent->pagetable, parent->mapped_info[i].va+j*PGSIZE);
+          char *newaddr = alloc_page(); memcpy(newaddr, (void *)addr, PGSIZE);
+          map_pages(child->pagetable, parent->mapped_info[i].va+j*PGSIZE, PGSIZE,(uint64)newaddr, prot_to_type(PROT_WRITE | PROT_READ, 1));
+        }
+        child->mapped_info[child->total_mapped_region].va = parent->mapped_info[i].va;
+        child->mapped_info[child->total_mapped_region].npages = parent->mapped_info[i].npages;
+        child->mapped_info[child->total_mapped_region].seg_type = DATA_SEGMENT;
+        child->total_mapped_region++;
+        break;
       case CODE_SEGMENT:
         // TODO (lab3_1): implment the mapping of child code segment to parent's
         // code segment.
@@ -194,29 +208,114 @@ int do_fork( process* parent)
         // segment of parent process.
         // DO NOT COPY THE PHYSICAL PAGES, JUST MAP THEM.
         //panic( "You need to implement the code segment mapping of child in lab3_1.\n" );
-        map_pages(
-          child->pagetable,
-          parent->mapped_info[i].va,
-          parent->mapped_info[i].npages*PGSIZE,
-          lookup_pa(parent->pagetable,
-          parent->mapped_info[i].va),
-          prot_to_type(
-            PROT_EXEC|PROT_READ,1
-        ));
+        for(int j=0;j<parent->mapped_info[i].npages;j++)
+        {
+          uint64 addr = lookup_pa(parent->pagetable, parent->mapped_info[i].va+j*PGSIZE);
+          sprint( "do_fork map code segment at pa:%lx of parent to child at va:%lx.\n",addr, parent->mapped_info[i].va+j*PGSIZE );
+          map_pages(child->pagetable, parent->mapped_info[i].va+j*PGSIZE, PGSIZE,addr, prot_to_type(PROT_WRITE | PROT_READ | PROT_EXEC, 1));
+        }
         // after mapping, register the vm region (do not delete codes below!)
         child->mapped_info[child->total_mapped_region].va = parent->mapped_info[i].va;
-        child->mapped_info[child->total_mapped_region].npages =
-          parent->mapped_info[i].npages;
+        child->mapped_info[child->total_mapped_region].npages = parent->mapped_info[i].npages;
         child->mapped_info[child->total_mapped_region].seg_type = CODE_SEGMENT;
         child->total_mapped_region++;
         break;
     }
   }
-
   child->status = READY;
   child->trapframe->regs.a0 = 0;
   child->parent = parent;
   insert_to_ready_queue( child );
-
   return child->pid;
+}
+
+process *first = NULL;
+
+void insert_to_waiting_queue(process *proc) 
+{
+  if(first == NULL)
+  {
+    proc->status = BLOCKED;
+    proc->queue_next = NULL;
+    first = proc;
+    return;
+  }
+  process *p;
+  for(p=first;p->queue_next!=NULL;p=p->queue_next)
+    if(p == proc) return;
+  if(p==proc) return;
+  p->queue_next = proc;
+  proc->status = BLOCKED;
+  proc->queue_next = NULL;
+  return;
+}
+
+void stopwait_ready(process* proc)
+{
+  process* rd = NULL, *p = NULL;
+  if(first == NULL) return;
+  if(first == proc->parent)
+  {
+    rd = first;
+    rd->status = READY;
+    first = first->queue_next;
+    insert_to_ready_queue(rd);
+    return;
+  }
+  for(p=first;p->queue_next!=NULL;p=p->queue_next)
+  {
+    if(p->queue_next == proc->parent)
+    {
+      rd = p->queue_next;
+      rd->status = READY;
+      p->queue_next = p->queue_next->queue_next;
+      insert_to_ready_queue(rd);
+      return;
+    }
+  }
+}
+
+int do_wait(int pid)
+{
+  int ct = 0;
+  if(pid == -1) {
+    for(int i = 0; i < NPROC; i++)
+      if(procs[i].parent == current)
+      {
+        ct = 1;
+        if(procs[i].status == ZOMBIE)
+        {
+          procs[i].status = FREE;
+          return i;
+        }
+      }
+    if(ct == 0) 
+      return -1;
+    else
+    {
+      insert_to_waiting_queue(current);
+      schedule();
+      return -2;
+    }
+  }
+  else if(pid < NPROC)
+  {
+    if(procs[pid].parent != current) 
+      return -1;
+    else
+    {
+      if(procs[pid].status == ZOMBIE)
+      {
+        procs[pid].status = FREE;
+        return pid;
+      }
+      else
+      {
+        insert_to_waiting_queue(current);
+        schedule();
+        return -2;
+      }  
+    }
+  }
+  else return -1;
 }
