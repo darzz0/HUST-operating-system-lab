@@ -6,26 +6,41 @@
 #include "string.h"
 #include "elf.h"
 #include "process.h"
-
+#include "pmm.h"
+#include "vmm.h"
+#include "sched.h"
+#include "memlayout.h"
 #include "spike_interface/spike_utils.h"
 
-// process is a structure defined in kernel/process.h
-process user_app;
+//
+// trap_sec_start points to the beginning of S-mode trap segment (i.e., the entry point of
+// S-mode trap vector). added @lab2_1
+//
+extern char trap_sec_start[];
+
+//
+// turn on paging. added @lab2_1
+//
+void enable_paging() {
+  // write the pointer to kernel page (table) directory into the CSR of "satp".
+  write_csr(satp, MAKE_SATP(g_kernel_pagetable));
+
+  // refresh tlb to invalidate its content.
+  flush_tlb();
+}
 
 //
 // load the elf, and construct a "process" (with only a trapframe).
 // load_bincode_from_host_elf is defined in elf.c
 //
-void load_user_program(process *proc) {
-  // USER_TRAP_FRAME is a physical address defined in kernel/config.h
-  proc->trapframe = (trapframe *)USER_TRAP_FRAME;
-  memset(proc->trapframe, 0, sizeof(trapframe));
-  // USER_KSTACK is also a physical address defined in kernel/config.h
-  proc->kstack = USER_KSTACK;
-  proc->trapframe->regs.sp = USER_STACK;
+process* load_user_program() {
+  process* proc;
 
-  // load_bincode_from_host_elf() is defined in kernel/elf.c
+  proc = alloc_process();
+  sprint("User application is loading.\n");
+
   load_bincode_from_host_elf(proc);
+  return proc;
 }
 
 //
@@ -33,19 +48,30 @@ void load_user_program(process *proc) {
 //
 int s_start(void) {
   sprint("Enter supervisor mode...\n");
-  // Note: we use direct (i.e., Bare mode) for memory mapping in lab1.
-  // which means: Virtual Address = Physical Address
-  // therefore, we need to set satp to be 0 for now. we will enable paging in lab2_x.
-  // 
-  // write_csr is a macro defined in kernel/riscv.h
+  // in the beginning, we use Bare mode (direct) memory mapping as in lab1.
+  // but now, we are going to switch to the paging mode @lab2_1.
+  // note, the code still works in Bare mode when calling pmm_init() and kern_vm_init().
   write_csr(satp, 0);
 
-  // the application code (elf) is first loaded into memory, and then put into execution
-  load_user_program(&user_app);
+  // init phisical memory manager
+  pmm_init();
+
+  // build the kernel page table
+  kern_vm_init();
+
+  // now, switch to paging mode by turning on paging (SV39)
+  enable_paging();
+  // the code now formally works in paging mode, meaning the page table is now in use.
+  sprint("kernel page table is on \n");
+
+  // added @lab3_1
+  init_proc_pool();
 
   sprint("Switch to user mode...\n");
-  // switch_to() is defined in kernel/process.c
-  switch_to(&user_app);
+  // the application code (elf) is first loaded into memory, and then put into execution
+  // added @lab3_1
+  insert_to_ready_queue( load_user_program() );
+  schedule();
 
   // we should never reach here.
   return 0;

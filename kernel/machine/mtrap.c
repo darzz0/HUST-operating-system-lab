@@ -14,7 +14,6 @@ static void handle_misaligned_load() { panic("Misaligned Load!"); }
 
 static void handle_misaligned_store() { panic("Misaligned AMO!"); }
 
-// added @lab1_3
 static void handle_timer() {
   int cpuid = 0;
   // setup the timer fired at next time (TIMER_INTERVAL from now)
@@ -25,7 +24,7 @@ static void handle_timer() {
 }
 
 //
-// handle_mtrap calls a handling function according to the type of a machine mode interrupt (trap).
+// handle_mtrap calls cooresponding functions to handle an exception of a given type.
 //
 void handle_mtrap() {
   uint64 mcause = read_csr(mcause);
@@ -43,9 +42,8 @@ void handle_mtrap() {
       break;
     case CAUSE_ILLEGAL_INSTRUCTION:
       // TODO (lab1_2): call handle_illegal_instruction to implement illegal instruction
-      // interception, and finish lab1_2.
-      //panic( "call handle_illegal_instruction to accomplish illegal instruction interception for lab1_2.\n" );
       handle_illegal_instruction();
+
       break;
     case CAUSE_MISALIGNED_LOAD:
       handle_misaligned_load();
@@ -61,3 +59,4 @@ void handle_mtrap() {
       break;
   }
 }
+
