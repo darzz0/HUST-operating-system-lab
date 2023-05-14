@@ -52,6 +52,18 @@
 #define CAUSE_LOAD_PAGE_FAULT 0xd      // Load page fault
 #define CAUSE_STORE_PAGE_FAULT 0xf     // Store/AMO page fault
 
+// irqs (interrupts). added @lab1_3
+#define CAUSE_MTIMER 0x8000000000000007
+#define CAUSE_MTIMER_S_TRAP 0x8000000000000001
+
+//Supervisor interrupt-pending register
+#define SIP_SSIP (1L << 1)
+
+// core local interruptor (CLINT), which contains the timer.
+#define CLINT 0x2000000L
+#define CLINT_MTIMECMP(hartid) (CLINT + 0x4000 + 8 * (hartid))
+#define CLINT_MTIME (CLINT + 0xBFF8)  // cycles since boot.
+
 // fields of sstatus, the Supervisor mode Status register
 #define SSTATUS_SPP (1L << 8)   // Previous mode, 1=Supervisor, 0=User
 #define SSTATUS_SPIE (1L << 5)  // Supervisor Previous Interrupt Enable
@@ -168,5 +180,47 @@ typedef struct riscv_regs_t {
   /* 232 */ uint64 t5;
   /* 240 */ uint64 t6;
 }riscv_regs;
+
+// following lines are added @lab2_1
+static inline void flush_tlb(void) { asm volatile("sfence.vma zero, zero"); }
+#define PGSIZE 4096  // bytes per page
+#define PGSHIFT 12   // offset bits within a page
+
+// use riscv's sv39 page table scheme.
+#define SATP_SV39 (8L << 60)
+#define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64)pagetable) >> 12))
+
+#define PTE_V (1L << 0)  // valid
+#define PTE_R (1L << 1)  // readable
+#define PTE_W (1L << 2)  // writable
+#define PTE_X (1L << 3)  // executable
+#define PTE_U (1L << 4)  // 1->user can access, 0->otherwise
+#define PTE_G (1L << 5)  // global
+#define PTE_A (1L << 6)  // accessed
+#define PTE_D (1L << 7)  // dirty
+
+// shift a physical address to the right place for a PTE.
+#define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
+
+// convert a pte content into its corresponding physical address
+#define PTE2PA(pte) (((pte) >> 10) << 12)
+
+// extract the property bits of a pte
+#define PTE_FLAGS(pte) ((pte)&0x3FF)
+
+// extract the three 9-bit page table indices from a virtual address.
+#define PXMASK 0x1FF  // 9 bits
+
+#define PXSHIFT(level) (PGSHIFT + (9 * (level)))
+#define PX(level, va) ((((uint64)(va)) >> PXSHIFT(level)) & PXMASK)
+
+// one beyond the highest possible virtual address.
+// MAXVA is actually one bit less than the max allowed by
+// Sv39, to avoid having to sign-extend virtual addresses
+// that have the high bit set.
+#define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
+
+typedef uint64 pte_t;
+typedef uint64 *pagetable_t;  // 512 PTEs
 
 #endif

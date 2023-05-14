@@ -10,6 +10,12 @@
 #include "util/string.h"
 #include "spike_interface/spike_utils.h"
 #include "util/functions.h"
+#include "process.h"
+
+
+uint64 first_malloc = 1;
+struct MCB_t *MCB_head = NULL;
+uint64 cur_mapping = USER_FREE_ADDRESS_START;
 
 /* --- utility functions for virtual address mapping --- */
 //
@@ -159,10 +165,10 @@ void *user_va_to_pa(pagetable_t page_dir, void *va) {
   // (va & (1<<PGSHIFT -1)) means computing the offset of "va" inside its page.
   // Also, it is possible that "va" is not mapped at all. in such case, we can find
   // invalid PTE, and should return NULL.
-  //panic( "You have to implement user_va_to_pa (convert user va to pa) to print messages in lab2_1.\n" );
   uint64 pa;
   pa = lookup_pa(page_dir,(uint64)va) + ((uint64)va & ((1<<PGSHIFT) -1));
   return (void*)pa;
+
 }
 
 //
@@ -186,8 +192,75 @@ void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free) {
   // (use free_page() defined in pmm.c) the physical pages. lastly, invalidate the PTEs.
   // as naive_free reclaims only one page at a time, you only need to consider one page
   // to make user/app_naive_malloc to behave correctly.
-  //panic( "You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n" );
   pte_t* PTE = page_walk(page_dir,va,0);
   free_page((void*)((*PTE >> 10)<<12));
   *PTE &= (~PTE_V);
+
+}
+
+
+void malloc_mapping(uint64 n){
+  uint64 temp = ROUNDUP(cur_mapping, PGSIZE);
+  char *new_mem;
+  for(uint64 i=temp; i < cur_mapping+n; i += PGSIZE)
+  {
+    new_mem = (char *)alloc_page();
+    memset(new_mem, 0, (size_t)PGSIZE);
+    map_pages(current->pagetable, temp, PGSIZE, (uint64)new_mem, prot_to_type(PROT_READ | PROT_WRITE,1) );
+  }
+  cur_mapping += n;
+  return;
+}
+
+uint64 user_better_malloc(uint64 n){
+  init_MCBs();
+  //sprint("%d\n", sizeof(MCB_head->next));
+  MCB *cur = (MCB*)MCB_head;
+  while(1) {
+    if(cur->m_size >= n && cur->m_stat == 0) {
+      cur->m_stat = 1;
+      return cur->m_startaddr;
+    }
+    if(cur->next == NULL) break;
+    cur = cur->next;
+  }
+  uint64 heap_top = cur_mapping;
+  malloc_mapping(sizeof(MCB) + n);
+  pte_t *pte = page_walk(current->pagetable, heap_top, 0);
+  MCB *cur_1 = (MCB*)(PTE2PA(*pte) + (heap_top & 0xfff));
+  uint64 align = (uint64)cur_1 % 8;
+  cur_1 = (MCB*)((uint64)cur_1 + 8 - align);
+
+  cur_1->m_stat = 1;
+  cur_1->m_startaddr = heap_top + sizeof(MCB);
+  cur_1->m_size = n;
+  cur_1->next = cur->next;
+
+  cur->next = cur_1;
+  return cur_1->m_startaddr;
+}
+
+void user_better_free(void *addr){
+  void *real_addr = (void*)((uint64)addr - sizeof(MCB));
+  pte_t *pte = page_walk(current->pagetable, (uint64)(real_addr), 0);
+  MCB *cur = (MCB*)(PTE2PA(*pte) + ((uint64)real_addr & 0xfff));
+  uint64 align = (uint64)cur % 8;
+  cur = (MCB*)((uint64)cur + 8 - align);
+  cur->m_stat = 0;
+}
+
+void init_MCBs() {
+  if(first_malloc) {
+    uint64 va_top = cur_mapping;
+    malloc_mapping(sizeof(MCB));
+    pte_t *pte = page_walk(current->pagetable, USER_FREE_ADDRESS_START, 0);
+    MCB_head = (MCB*)PTE2PA(*pte);
+    MCB_head->m_stat = 0;
+    MCB_head->m_startaddr = *pte + sizeof(MCB);  //MCB is stored in heap as well
+    MCB_head->m_size = 0;
+    MCB_head->next = NULL;
+    first_malloc = 0;
+    return;
+  }
+  return;
 }
