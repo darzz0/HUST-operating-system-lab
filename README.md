@@ -1,3 +1,25 @@
+## Preface for HUSTers
+----------
+
+### source
+
+This project comes from the repository [华中科技大学操作系统团队 / riscv-pke](https://gitee.com/hustos/riscv-pke).
+
+### structure
+
+As you can see in **Branches**, each branch is corresponding to a level with its concise description.
+
+![tutu](preview.png)
+
+### usage
+
+This is **NOT** a local runnable package, cuz I haven't done any compile works in it. Just regard it as an answerbook of checkpoints in *Educoder* online assessment. If you want to run this project locally, please read on and find your way in **official README**.
+
+### caution
+
+This preface will only be displayed in default branch.
+
+----------
 ## about riscv-pke (Proxy Kernel for Education, a.k.a. PKE) ##
 ----------
 
